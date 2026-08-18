@@ -23,13 +23,34 @@ const demoMessages = [
 function normalizeMessage(message, index) {
   const rawDirection = message.direcao ?? message.direction ?? message.type ?? message.fromMe ?? message.from_me
   const outbound = rawDirection === true || ['enviada', 'outbound', 'sent', 'outgoing', 'from_me'].includes(String(rawDirection).toLowerCase())
+  const rawAttachment = message.anexo ?? message.attachment ?? null
   return {
     id: String(message.id ?? message.messageId ?? message.message_id ?? index),
     direction: outbound ? 'outbound' : 'inbound',
     text: message.texto ?? message.text ?? message.body ?? message.content ?? message.message ?? '',
     timestamp: message.em ?? message.timestamp ?? message.createdAt ?? message.created_at ?? message.date ?? null,
     status: message.status ?? (outbound ? 'sent' : 'read'),
+    attachment: rawAttachment ? {
+      type: String(rawAttachment.tipo ?? rawAttachment.type ?? '').toLowerCase(),
+      mime: rawAttachment.mime ?? rawAttachment.mimeType ?? rawAttachment.mimetype ?? '',
+      name: rawAttachment.nome ?? rawAttachment.name ?? '',
+      bytes: rawAttachment.bytes ?? rawAttachment.size ?? null,
+      ready: rawAttachment.pronto ?? rawAttachment.ready ?? true,
+      status: rawAttachment.status ?? '',
+      url: rawAttachment.url ?? rawAttachment.href ?? '',
+    } : null,
   }
+}
+
+function sortMessagesChronologically(messages) {
+  return [...messages].sort((a, b) => {
+    const first = new Date(a.timestamp).getTime()
+    const second = new Date(b.timestamp).getTime()
+    if (Number.isNaN(first) && Number.isNaN(second)) return 0
+    if (Number.isNaN(first)) return 1
+    if (Number.isNaN(second)) return -1
+    return first - second
+  })
 }
 
 function normalizeConversation(payload, phone) {
@@ -43,7 +64,7 @@ function normalizeConversation(payload, phone) {
       phone: contact.phone ?? conversation?.telefone ?? conversation?.phone ?? root?.telefone ?? root?.phone ?? phone,
       avatar: contact.avatar ?? contact.picture ?? conversation?.avatar ?? null,
     },
-    messages: Array.isArray(messages) ? messages.map(normalizeMessage) : [],
+    messages: Array.isArray(messages) ? sortMessagesChronologically(messages.map(normalizeMessage)) : [],
     windowOpen: root?.janela_aberta ?? conversation?.janela_aberta ?? null,
   }
 }
@@ -67,6 +88,14 @@ function headers(channel) {
   return { Accept: 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }
 }
 
+function resolveApiUrl(channel, path) {
+  if (/^https?:\/\//i.test(path)) return path
+  const { baseUrl } = configFor(channel)
+  if (/^https?:\/\//i.test(baseUrl)) return new URL(path, `${baseUrl}/`).toString()
+  const normalizedPath = path.replace(/^\/api\/v1/, '')
+  return new URL(`${baseUrl}${normalizedPath.startsWith('/') ? normalizedPath : `/${normalizedPath}`}`, window.location.origin).toString()
+}
+
 async function parseError(response) {
   const payload = await response.json().catch(() => null)
   const error = new Error(payload?.error || payload?.message || `A API retornou o status ${response.status}.`)
@@ -88,7 +117,7 @@ export async function getAccounts(channel, signal) {
     : accounts
 }
 
-export async function getConversation(channel, phone, accountId, signal) {
+export async function getConversation(channel, phone, accountId, signal, since = '') {
   const normalizedPhone = normalizeBrazilianPhone(phone)
   if (!/^55\d{10,11}$/.test(normalizedPhone)) {
     throw new Error('Digite um telefone brasileiro válido, com DDD.')
@@ -105,6 +134,7 @@ export async function getConversation(channel, phone, accountId, signal) {
   )
   url.searchParams.set('account_id', accountId)
   url.searchParams.set('limit', '500')
+  if (since) url.searchParams.set('since', since)
   const response = await fetch(url, {
     method: 'GET',
     signal,
@@ -117,6 +147,17 @@ export async function getConversation(channel, phone, accountId, signal) {
   }
   if (!response.ok) throw await parseError(response)
   return normalizeConversation(await response.json(), normalizedPhone)
+}
+
+export async function getAttachment(channel, path, signal) {
+  if (!path) throw new Error('A mídia não possui uma URL disponível.')
+  const response = await fetch(resolveApiUrl(channel, path), {
+    method: 'GET',
+    signal,
+    headers: headers(channel),
+  })
+  if (!response.ok) throw await parseError(response)
+  return response.blob()
 }
 
 export async function sendMessage({ channel, phone, accountId, text, attendant }, signal) {

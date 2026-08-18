@@ -40,6 +40,37 @@ h1 { font: 800 clamp(28px, 4vw, 40px) 'Manrope', sans-serif; letter-spacing: -1.
 .search-row button:disabled { opacity: .65; cursor: wait; transform: none; }
 .error { width: fit-content; display: flex; align-items: center; gap: 7px; color: #a23e3e; background: #fff0f0; border: 1px solid #f1cdcd; border-radius: 8px; padding: 9px 11px; margin-top: 10px; font-size: 13px; }
 .conversation-card { min-height: 430px; overflow: hidden; background: #e9efeb; border: 1px solid #d7dfda; border-radius: 18px; box-shadow: 0 12px 35px #274a3b16; }
+.conversation-results { min-height: 360px; display: grid; align-content: start; gap: 12px; }
+.results-loader, .empty-results { overflow: hidden; background: #e9efeb; border: 1px solid #d7dfda; border-radius: 18px; box-shadow: 0 12px 35px #274a3b12; }
+.results-summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 17px; border: 1px solid #d8e3dd; border-radius: 12px; color: #3c554a; background: #f8fbf9; }
+.results-summary > div { display: flex; align-items: center; gap: 8px; }
+.results-summary strong { font-size: 13px; }
+.results-summary span { color: #718079; font-size: 11px; }
+.partial-errors { padding: 11px 14px; border: 1px solid #efd9b5; border-radius: 10px; color: #815a29; background: #fff8eb; font-size: 11px; }
+.partial-errors summary { cursor: pointer; font-weight: 700; }
+.partial-errors ul { margin: 9px 0 0; padding-left: 18px; }
+.partial-errors li + li { margin-top: 4px; }
+.thread-card { overflow: hidden; border: 1px solid #d7dfda; border-radius: 15px; background: white; box-shadow: 0 7px 22px #274a3b0e; transition: border-color .2s, box-shadow .2s; }
+.thread-card.expanded { border-color: #bfcfc6; box-shadow: 0 12px 32px #274a3b18; }
+.thread-header { width: 100%; min-height: 82px; display: flex; align-items: center; gap: 12px; padding: 13px 16px; border: 0; color: #17201d; background: white; text-align: left; cursor: pointer; }
+.thread-header:hover { background: #fbfdfc; }
+.thread-avatar { flex: 0 0 auto; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 13px; color: white; background: #168b58; font-weight: 800; }
+.thread-avatar.official { background: #397bac; }
+.thread-main { min-width: 0; display: flex; flex: 1; flex-direction: column; gap: 6px; }
+.thread-title { display: flex; align-items: center; gap: 8px; }
+.thread-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.thread-preview { overflow: hidden; color: #718079; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.thread-meta { flex: 0 0 auto; display: flex; align-items: flex-end; flex-direction: column; gap: 6px; color: #718079; }
+.thread-meta time { font-size: 11px; }
+.thread-meta small { padding: 4px 7px; border-radius: 99px; background: #f0f5f2; font-size: 9px; }
+.thread-chevron { flex: 0 0 auto; color: #829089; transition: transform .2s; }
+.thread-card.expanded .thread-chevron { transform: rotate(180deg); }
+.thread-content { border-top: 1px solid #dbe3de; }
+.thread-contact { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 17px; color: #53635b; background: #f8faf9; font-size: 11px; }
+.thread-contact span { font-weight: 700; }
+.thread-contact small { color: #7b8982; }
+.thread-messages { min-height: 290px; max-height: 520px; border-radius: 0; }
+.thread-content .composer { border-top-color: #d0dad4; }
 .contact-bar { height: 76px; display: flex; align-items: center; gap: 12px; padding: 0 22px; background: white; border-bottom: 1px solid #dbe3de; }
 .avatar { flex: 0 0 auto; width: 43px; height: 43px; display: grid; place-items: center; border-radius: 50%; color: white; background: linear-gradient(145deg, #2aaa70, #13744b); font-weight: 700; overflow: hidden; }
 .avatar img { width: 100%; height: 100%; object-fit: cover; }
@@ -71,6 +102,25 @@ h1 { font: 800 clamp(28px, 4vw, 40px) 'Manrope', sans-serif; letter-spacing: -1.
 .bubble { width: fit-content; max-width: min(620px, 75%); padding: 10px 11px 7px; border-radius: 4px 13px 13px 13px; background: white; box-shadow: 0 1px 2px #1a362a22; }
 .outbound .bubble { border-radius: 13px 4px 13px 13px; background: #d8f8e6; }
 .bubble p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; font-size: 14px; line-height: 1.5; }
+.message-link { color: #0969a7; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+.message-link:hover { color: #074e7c; }
+.outbound .message-link { color: #08745d; }
+.message-attachment { position: relative; width: min(360px, 65vw); margin: 0 0 7px; overflow: hidden; border-radius: 9px; background: #dfe7e2; }
+.message-attachment img { display: block; width: 100%; max-height: 420px; object-fit: contain; }
+.message-attachment a { position: absolute; right: 8px; bottom: 8px; display: flex; align-items: center; gap: 5px; padding: 6px 8px; border-radius: 7px; color: white; background: #17201dcc; text-decoration: none; font-size: 10px; font-weight: 700; }
+.message-audio { width: min(390px, 72vw); padding: 11px; overflow: visible; background: #edf2ef; }
+.message-audio audio { display: block; width: 100%; height: 40px; }
+.message-audio .audio-label { display: flex; align-items: center; gap: 7px; min-width: 0; margin: 0 72px 8px 2px; color: #4f5e57; font-size: 11px; }
+.message-audio .audio-label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.message-audio a { top: 8px; bottom: auto; }
+.message-document { width: min(390px, 72vw); min-height: 72px; display: flex; align-items: center; gap: 11px; padding: 12px; background: #edf2ef; }
+.message-document > svg { flex: 0 0 auto; color: #4f6f60; }
+.message-document figcaption { min-width: 0; display: flex; flex: 1; flex-direction: column; gap: 4px; padding-right: 68px; }
+.message-document strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.message-document figcaption span { overflow: hidden; color: #718079; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; }
+.message-document a { top: 50%; bottom: auto; transform: translateY(-50%); }
+.attachment-state { width: min(300px, 65vw); min-height: 76px; display: flex; align-items: center; justify-content: center; gap: 7px; margin-bottom: 7px; border-radius: 9px; color: #66766f; background: #edf2ef; font-size: 11px; }
+.attachment-state.error-state { color: #a23e3e; background: #fff0f0; }
 .meta { min-width: 55px; float: right; display: inline-flex; justify-content: flex-end; align-items: center; gap: 3px; color: #718079; margin: 5px 0 0 12px; font-size: 10px; }
 .outbound .meta svg { color: #168b82; }
 .empty-state, .loader { min-height: 305px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: #65736d; }
@@ -98,4 +148,12 @@ footer span { margin: 0 6px; color: #168b58; }
   .bubble { max-width: 88%; }
   .message-count { display: none; }
   .channel-badge { margin-left: auto; }
+  .results-summary { align-items: flex-start; flex-direction: column; gap: 5px; }
+  .thread-header { gap: 9px; padding: 12px; }
+  .thread-avatar { width: 39px; height: 39px; border-radius: 11px; }
+  .thread-title { align-items: flex-start; flex-direction: column; gap: 3px; }
+  .thread-title .channel-badge { margin-left: 0; }
+  .thread-meta small { display: none; }
+  .thread-contact { align-items: flex-start; flex-direction: column; gap: 2px; }
+  .thread-messages { min-height: 260px; }
 }
