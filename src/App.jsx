@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { Check, CheckCheck, ChevronDown, Download, FileText, Image as ImageIcon, Layers3, MessageCircle, Mic, Phone, Search, Send, Wifi, X } from 'lucide-react'
-import { ATTENDANT_NAME, cleanPhone, getAccounts, getAttachment, getConversation, normalizeBrazilianPhone, sendMessage } from './api'
+import { Check, CheckCheck, ChevronDown, Download, FileText, Image as ImageIcon, Inbox, Layers3, MessageCircle, Mic, Phone, RefreshCw, Search, Send, UserRound, Wifi, X } from 'lucide-react'
+import { ATTENDANT_NAME, cleanPhone, getAccounts, getAttachment, getConversation, getConversations, normalizeBrazilianPhone, sendMessage } from './api'
 
 function formatPhone(value) {
   const digits = cleanPhone(value).slice(0, 13)
@@ -195,7 +195,19 @@ function ConversationMessages({ thread, messagesRef }) {
   </div>
 }
 
+const conversationStatus = {
+  queued: 'Na fila',
+  in_service: 'Em atendimento',
+  closed: 'Encerrada',
+}
+
+function safeTimestamp(value) {
+  const timestamp = new Date(value).getTime()
+  return Number.isNaN(timestamp) ? 0 : timestamp
+}
+
 export default function App() {
+  const [activeView, setActiveView] = useState('student')
   const [phone, setPhone] = useState('')
   const [threads, setThreads] = useState([])
   const [expandedThreadId, setExpandedThreadId] = useState('')
@@ -207,18 +219,52 @@ export default function App() {
   const [drafts, setDrafts] = useState({})
   const [sendingThreadId, setSendingThreadId] = useState('')
   const [sendErrors, setSendErrors] = useState({})
+  const [inboxItems, setInboxItems] = useState([])
+  const [inboxLoading, setInboxLoading] = useState(false)
+  const [inboxError, setInboxError] = useState('')
+  const [inboxPartialErrors, setInboxPartialErrors] = useState([])
+  const [inboxReloadKey, setInboxReloadKey] = useState(0)
+  const [selectedInboxId, setSelectedInboxId] = useState('')
+  const [inboxThread, setInboxThread] = useState(null)
+  const [inboxThreadLoading, setInboxThreadLoading] = useState(false)
+  const [inboxDraft, setInboxDraft] = useState('')
+  const [inboxSending, setInboxSending] = useState(false)
+  const [inboxSendError, setInboxSendError] = useState('')
   const controllerRef = useRef(null)
+  const inboxControllerRef = useRef(null)
   const messagesRef = useRef(null)
+  const inboxMessagesRef = useRef(null)
   const threadsRef = useRef([])
+  const inboxThreadRef = useRef(null)
+  const readInboxIdsRef = useRef(new Set())
   const composerRef = useRef(null)
+  const inboxComposerRef = useRef(null)
   const expandedThread = threads.find((thread) => thread.id === expandedThreadId) || null
+  const selectedInboxItem = inboxItems.find((item) => item.id === selectedInboxId) || null
 
   useEffect(() => {
     const messagesElement = messagesRef.current
     if (messagesElement) messagesElement.scrollTo({ top: messagesElement.scrollHeight, behavior: 'smooth' })
   }, [expandedThreadId, expandedThread?.conversation.messages.length])
   useEffect(() => { threadsRef.current = threads }, [threads])
-  useEffect(() => () => controllerRef.current?.abort(), [])
+  useEffect(() => {
+    const messagesElement = inboxMessagesRef.current
+    if (messagesElement) messagesElement.scrollTo({ top: messagesElement.scrollHeight, behavior: 'smooth' })
+  }, [selectedInboxId, inboxThread?.conversation.messages.length])
+  useEffect(() => { inboxThreadRef.current = inboxThread }, [inboxThread])
+  useEffect(() => {
+    if (!selectedInboxId) return
+    readInboxIdsRef.current.add(selectedInboxId)
+    setInboxItems((items) => items.map((item) => (
+      item.id === selectedInboxId && item.unreadCount > 0
+        ? { ...item, unreadCount: 0 }
+        : item
+    )))
+  }, [selectedInboxId])
+  useEffect(() => () => {
+    controllerRef.current?.abort()
+    inboxControllerRef.current?.abort()
+  }, [])
 
   useEffect(() => {
     if (!expandedThread) return undefined
@@ -258,6 +304,126 @@ export default function App() {
       refreshController?.abort()
     }
   }, [expandedThreadId, expandedThread?.account.id, expandedThread?.channel, expandedThread?.conversation.contact.phone])
+
+  useEffect(() => {
+    if (activeView !== 'inbox') return undefined
+    inboxControllerRef.current?.abort()
+    const controller = new AbortController()
+    inboxControllerRef.current = controller
+    setInboxLoading(true)
+    setInboxError('')
+    setInboxPartialErrors([])
+
+    async function loadInbox() {
+      try {
+        const accounts = await getAccounts('hub', controller.signal)
+        const results = await Promise.allSettled(accounts.map(async (account) => ({
+          account,
+          conversations: await getConversations('hub', account.id, controller.signal),
+        })))
+        if (controller.signal.aborted) return
+
+        const failures = []
+        const items = []
+        results.forEach((result, index) => {
+          if (result.status === 'rejected') {
+            if (result.reason?.name !== 'AbortError') failures.push(`${accounts[index]?.name || 'Conta'}: ${result.reason?.message || 'falha ao listar conversas'}`)
+            return
+          }
+          result.value.conversations.forEach((conversation) => {
+            const id = `${result.value.account.id}:${conversation.phone}`
+            items.push({
+              ...conversation,
+              id,
+              unreadCount: readInboxIdsRef.current.has(id) ? 0 : conversation.unreadCount,
+              channel: 'hub',
+              account: result.value.account,
+            })
+          })
+        })
+        items.sort((a, b) => new Date(b.lastTimestamp).getTime() - new Date(a.lastTimestamp).getTime())
+        setInboxItems(items)
+        setInboxPartialErrors(failures)
+        setSelectedInboxId((current) => items.some((item) => item.id === current) ? current : items[0]?.id || '')
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          setInboxItems([])
+          setSelectedInboxId('')
+          setInboxError(err.message)
+        }
+      } finally {
+        if (!controller.signal.aborted) setInboxLoading(false)
+      }
+    }
+
+    loadInbox()
+    return () => controller.abort()
+  }, [activeView, inboxReloadKey])
+
+  useEffect(() => {
+    if (activeView !== 'inbox' || !selectedInboxItem) {
+      setInboxThread(null)
+      return undefined
+    }
+    const controller = new AbortController()
+    setInboxThreadLoading(true)
+    setInboxSendError('')
+    getConversation('hub', selectedInboxItem.phone, selectedInboxItem.account.id, controller.signal)
+      .then((conversation) => {
+        const contactName = conversation.contact.name === 'Contato' ? selectedInboxItem.name : conversation.contact.name
+        setInboxThread({
+          id: selectedInboxItem.id,
+          channel: 'hub',
+          account: selectedInboxItem.account,
+          conversation: { ...conversation, contact: { ...conversation.contact, name: contactName } },
+        })
+      })
+      .catch((err) => { if (err.name !== 'AbortError') setInboxError(err.message) })
+      .finally(() => { if (!controller.signal.aborted) setInboxThreadLoading(false) })
+    return () => controller.abort()
+  }, [activeView, selectedInboxId])
+
+  useEffect(() => {
+    if (activeView !== 'inbox' || !inboxThread) return undefined
+    let refreshing = false
+    let controller = null
+    const refreshConversation = async () => {
+      if (refreshing || document.hidden) return
+      refreshing = true
+      controller = new AbortController()
+      try {
+        const current = inboxThreadRef.current
+        if (!current) return
+        const messagesWithTimestamp = current.conversation.messages.filter((message) => message.timestamp)
+        const since = messagesWithTimestamp.at(-1)?.timestamp || ''
+        const incoming = await getConversation('hub', current.conversation.contact.phone, current.account.id, controller.signal, since)
+        setInboxThread((latest) => latest ? { ...latest, conversation: mergeConversation(latest.conversation, incoming) } : latest)
+        const latestMessage = incoming.messages.at(-1)
+        if (latestMessage) {
+          setInboxItems((items) => items.map((item) => item.id === current.id ? {
+            ...item,
+            lastMessage: messagePreview(latestMessage),
+            lastDirection: latestMessage.direction === 'outbound' ? 'enviada' : 'recebida',
+            lastTimestamp: latestMessage.timestamp,
+          } : item))
+        }
+      } catch (err) {
+        if (err.name !== 'AbortError') console.warn('Não foi possível atualizar a caixa de conversa.', err)
+      } finally {
+        refreshing = false
+      }
+    }
+    const intervalId = window.setInterval(refreshConversation, 5000)
+    const refreshWhenVisible = () => { if (!document.hidden) refreshConversation() }
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    window.addEventListener('focus', refreshConversation)
+    return () => {
+      window.clearInterval(intervalId)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+      window.removeEventListener('focus', refreshConversation)
+      controller?.abort()
+    }
+  }, [activeView, inboxThread?.account.id, inboxThread?.conversation.contact.phone, selectedInboxId])
 
   async function handleSearch(event) {
     event.preventDefault()
@@ -396,13 +562,72 @@ export default function App() {
     }
   }
 
+  async function handleInboxSend(event) {
+    event.preventDefault()
+    if (!inboxThread || inboxSending || !inboxDraft.trim()) return
+    const text = inboxDraft.trim()
+    setInboxSending(true)
+    setInboxSendError('')
+    try {
+      const result = await sendMessage({
+        channel: 'hub',
+        phone: inboxThread.conversation.contact.phone,
+        accountId: inboxThread.account.id,
+        text,
+        attendant: ATTENDANT_NAME,
+      })
+      const latestTimestamp = inboxThread.conversation.messages.reduce((maximum, message) => (
+        Math.max(maximum, safeTimestamp(message.timestamp))
+      ), 0)
+      const optimisticTimestamp = new Date(latestTimestamp ? latestTimestamp + 1 : Date.now()).toISOString()
+      const optimisticMessage = {
+        id: result.message_id || result.wa_message_id || `local-${Date.now()}`,
+        direction: 'outbound',
+        text,
+        timestamp: optimisticTimestamp,
+        status: 'sent',
+        optimistic: true,
+      }
+      setInboxThread((current) => current ? {
+        ...current,
+        conversation: {
+          ...current.conversation,
+          messages: [...current.conversation.messages, optimisticMessage],
+        },
+      } : current)
+      setInboxItems((items) => items.map((item) => item.id === inboxThread.id ? {
+        ...item,
+        lastMessage: text,
+        lastDirection: 'enviada',
+        lastTimestamp: optimisticTimestamp,
+      } : item))
+      setInboxDraft('')
+    } catch (err) {
+      setInboxSendError(err.message)
+    } finally {
+      setInboxSending(false)
+      window.requestAnimationFrame(() => inboxComposerRef.current?.focus({ preventScroll: true }))
+    }
+  }
+
+  function handleInboxDraftKeyDown(event) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      handleInboxSend(event)
+    }
+  }
+
   return <div className="app-shell">
     <header className="topbar">
       <div className="brand"><span className="brand-mark"><MessageCircle size={24} /></span><span>Campuzz <span>Conversas</span></span></div>
+      <nav className="app-tabs" aria-label="Áreas de conversas">
+        <button className={activeView === 'student' ? 'active' : ''} type="button" onClick={() => setActiveView('student')}><UserRound size={16} />Histórico do aluno</button>
+        <button className={activeView === 'inbox' ? 'active' : ''} type="button" onClick={() => setActiveView('inbox')}><Inbox size={16} />Caixa de conversas</button>
+      </nav>
       <div className="connection"><Wifi size={15} /><span>Hub + API Oficial</span></div>
     </header>
 
-    <main>
+    {activeView === 'student' ? <main>
       <section className="intro">
         <span className="eyebrow">Ficha do aluno</span>
         <h1>Conversas no WhatsApp</h1>
@@ -467,7 +692,82 @@ export default function App() {
           </article>
         })}
       </section>
-    </main>
+    </main> : <main className="inbox-page">
+      <section className="inbox-intro">
+        <div>
+          <span className="eyebrow">WhatsApp Hub</span>
+          <h1>Caixa de conversas</h1>
+          <p>Atendimentos de todas as contas, identificados pelo número de origem.</p>
+        </div>
+        <button className="inbox-refresh" type="button" onClick={() => setInboxReloadKey((key) => key + 1)} disabled={inboxLoading}>
+          <RefreshCw size={17} className={inboxLoading ? 'spinning' : ''} />{inboxLoading ? 'Atualizando...' : 'Atualizar'}
+        </button>
+      </section>
+
+      {inboxError && <div className="error" role="alert"><X size={16} />{inboxError}</div>}
+      {inboxPartialErrors.length > 0 && <details className="partial-errors inbox-partial-errors">
+        <summary>{inboxPartialErrors.length} {inboxPartialErrors.length === 1 ? 'conta não pôde ser consultada' : 'contas não puderam ser consultadas'}</summary>
+        <ul>{inboxPartialErrors.map((message, index) => <li key={`${index}-${message}`}>{message}</li>)}</ul>
+      </details>}
+
+      <section className="inbox-layout" aria-busy={inboxLoading}>
+        <aside className="inbox-list">
+          <div className="inbox-list-header">
+            <strong>Conversas</strong>
+            <span>{inboxItems.length}</span>
+          </div>
+          <div className="inbox-list-scroll">
+            {inboxLoading && !inboxItems.length && <div className="loader inbox-loader"><span /><p>Carregando conversas...</p></div>}
+            {!inboxLoading && !inboxItems.length && <div className="inbox-list-empty"><Inbox size={25} /><span>Nenhuma conversa encontrada.</span></div>}
+            {inboxItems.map((item) => <button
+              className={`inbox-item ${item.id === selectedInboxId ? 'active' : ''}`}
+              type="button"
+              key={item.id}
+              onClick={() => setSelectedInboxId(item.id)}
+            >
+              <span className="inbox-avatar">{item.name?.charAt(0).toUpperCase() || 'C'}</span>
+              <span className="inbox-item-body">
+                <span className="inbox-item-title"><strong>{item.name || formatContactPhone(item.phone)}</strong><time>{formatTime(item.lastTimestamp)}</time></span>
+                <span className="inbox-item-preview">{item.lastDirection === 'enviada' ? 'Você: ' : ''}{item.lastMessage || 'Sem mensagem'}</span>
+                <span className="inbox-item-details">
+                  <small className="inbox-account">{item.account.name}</small>
+                  <small className={`inbox-status ${item.status || 'queued'}`}>{conversationStatus[item.status] || item.status || 'Na fila'}</small>
+                  {item.unreadCount > 0 && <small className="unread-count">{item.unreadCount}</small>}
+                </span>
+              </span>
+            </button>)}
+          </div>
+        </aside>
+
+        <div className="inbox-chat">
+          {inboxThreadLoading && <div className="loader"><span /><p>Carregando histórico...</p></div>}
+          {!inboxThreadLoading && !inboxThread && <div className="empty-state"><div className="empty-icon"><MessageCircle size={30} /></div><h2>Selecione uma conversa</h2><p>Escolha um contato para visualizar o histórico completo.</p></div>}
+          {!inboxThreadLoading && inboxThread && <>
+            <header className="inbox-chat-header">
+              <span className="avatar">{inboxThread.conversation.contact.name?.charAt(0).toUpperCase() || 'C'}</span>
+              <div className="inbox-contact-title">
+                <strong>{inboxThread.conversation.contact.name}</strong>
+                <span>{formatContactPhone(inboxThread.conversation.contact.phone)}</span>
+              </div>
+              <div className="inbox-origin">
+                <strong>{inboxThread.account.name}</strong>
+                <span>{conversationStatus[selectedInboxItem?.status] || selectedInboxItem?.status || 'Na fila'}{selectedInboxItem?.attending ? ` · ${selectedInboxItem.attending}` : ''}</span>
+              </div>
+            </header>
+            <ConversationMessages thread={inboxThread} messagesRef={inboxMessagesRef} />
+            <form className="composer" onSubmit={handleInboxSend}>
+              {inboxSendError && <div className="send-error" role="alert"><X size={14} />{inboxSendError}</div>}
+              <div className="composer-row">
+                <textarea ref={inboxComposerRef} value={inboxDraft} onChange={(event) => setInboxDraft(event.target.value.slice(0, 4096))} onKeyDown={handleInboxDraftKeyDown} placeholder={`Responder por ${inboxThread.account.name}`} aria-label="Mensagem" rows="1" disabled={inboxSending} />
+                <span className={`char-count ${inboxDraft.length > 3900 ? 'near-limit' : ''}`}>{inboxDraft.length}/4096</span>
+                <button type="submit" disabled={inboxSending || !inboxDraft.trim()} aria-label="Enviar mensagem"><Send size={19} /></button>
+              </div>
+              <span className="send-hint">Resposta enviada pelo WhatsApp Hub · Enter para enviar</span>
+            </form>
+          </>}
+        </div>
+      </section>
+    </main>}
     <footer>Campuzz <span>•</span> Histórico integrado de conversas</footer>
   </div>
 }

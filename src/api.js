@@ -117,6 +117,48 @@ export async function getAccounts(channel, signal) {
     : accounts
 }
 
+export async function getConversations(channel, accountId, signal) {
+  if (DEMO_MODE) {
+    await new Promise((resolve) => setTimeout(resolve, 450))
+    return [{
+      id: 'demo-conversation',
+      phone: '5584999998888',
+      name: 'Maria Oliveira',
+      status: 'queued',
+      attending: null,
+      lastMessage: 'Olá! Gostaria de tirar uma dúvida.',
+      lastDirection: 'recebida',
+      lastTimestamp: demoMessages.at(-1)?.timestamp ?? new Date().toISOString(),
+      unreadCount: 1,
+      windowOpen: true,
+    }]
+  }
+  if (!accountId) throw new Error('Nenhuma conta do WhatsApp está disponível para listar conversas.')
+  const url = new URL(`${configFor(channel).baseUrl}/conversations`, window.location.origin)
+  url.searchParams.set('account_id', accountId)
+  const response = await fetch(url, {
+    method: 'GET',
+    signal,
+    headers: headers(channel),
+  })
+  if (!response.ok) throw await parseError(response)
+  const payload = await response.json()
+  const root = payload?.data ?? payload
+  const conversations = Array.isArray(root?.conversations) ? root.conversations : []
+  return conversations.map((conversation, index) => ({
+    id: String(conversation.id ?? conversation.conversation_id ?? `${accountId}-${conversation.telefone ?? index}`),
+    phone: conversation.telefone ?? conversation.phone ?? '',
+    name: conversation.nome_whatsapp ?? conversation.name ?? 'Contato',
+    status: conversation.status ?? null,
+    attending: conversation.atendendo ?? conversation.attending ?? null,
+    lastMessage: conversation.ultima_mensagem ?? conversation.last_message ?? '',
+    lastDirection: conversation.ultima_direcao ?? conversation.last_direction ?? '',
+    lastTimestamp: conversation.ultima_em ?? conversation.last_timestamp ?? null,
+    unreadCount: Number(conversation.nao_lidas ?? conversation.unread_count ?? 0),
+    windowOpen: conversation.janela_aberta ?? conversation.window_open ?? null,
+  }))
+}
+
 export async function getConversation(channel, phone, accountId, signal, since = '') {
   const normalizedPhone = normalizeBrazilianPhone(phone)
   if (!/^55\d{10,11}$/.test(normalizedPhone)) {

@@ -38,6 +38,20 @@ O usuário pode digitar apenas DDD + telefone (por exemplo, `(15) 99719-0538`). 
 
 Não há seleção manual de API ou conta. Cada resultado é exibido como um fluxo separado, identificado pelo setor e pelo provedor. Falhas isoladas não impedem a exibição dos demais resultados, e a conversa com atividade mais recente é expandida primeiro.
 
+## Caixa de conversas do Hub
+
+A aba **Caixa de conversas** consulta `GET /conversations?account_id=...` em todas as contas do WhatsApp Hub. O resultado forma uma caixa de entrada única, ordenada pela mensagem mais recente, sem perder a identificação da conta de origem.
+
+Cada item mostra contato, telefone, última mensagem, número de não lidas, situação (`queued`, `in_service` ou `closed`), atendente atual e a conta que recebeu a conversa. Ao selecionar um item, o histórico é carregado com a conta correspondente e permanece em atualização incremental a cada 5 segundos.
+
+```http
+GET https://whatsapp.prosperargroup.com.br/api/v1/conversations?account_id=UUID
+Accept: application/json
+Authorization: Bearer wah_SUA_CHAVE_AQUI
+```
+
+Esta primeira versão usa a listagem de conversas apenas do Hub, pois é nesse contrato que existem os campos de fila, atendimento e encerramento. Ações futuras de assumir, transferir ou encerrar atendimento devem respeitar os endpoints específicos disponibilizados pelo backend.
+
 ## Resposta aceita
 
 O adaptador aceita uma resposta direta ou dentro de `data`, com a conversa em `conversation` ou `chat`:
