@@ -425,8 +425,8 @@ export default function App() {
     }
   }, [activeView, inboxThread?.account.id, inboxThread?.conversation.contact.phone, selectedInboxId])
 
-  async function handleSearch(event) {
-    event.preventDefault()
+  async function handleSearch(event, phoneOverride = '') {
+    event?.preventDefault?.()
     controllerRef.current?.abort()
     const controller = new AbortController()
     controllerRef.current = controller
@@ -440,7 +440,7 @@ export default function App() {
     setDrafts({})
     setSendErrors({})
     try {
-      const normalizedPhone = normalizeBrazilianPhone(phone)
+      const normalizedPhone = normalizeBrazilianPhone(phoneOverride || phone)
       if (!/^55\d{10,11}$/.test(normalizedPhone)) throw new Error('Digite um telefone brasileiro válido, com DDD.')
 
       const channelResults = await Promise.allSettled(['hub', 'official'].map(async (channel) => ({

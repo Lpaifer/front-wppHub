@@ -7,6 +7,10 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     server: {
       proxy: {
+        '/api': {
+          target: (env.AUTH_API_UPSTREAM_URL || 'http://localhost:3001').replace(/\/$/, ''),
+          changeOrigin: true,
+        },
         '/official-api': {
           target: (env.OFFICIAL_API_UPSTREAM_URL || 'https://whatsapp-modelos.andre-51e.workers.dev').replace(/\/$/, ''),
           changeOrigin: true,
