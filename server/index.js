@@ -37,6 +37,28 @@ if (process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD) {
 app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',').map((origin) => origin.trim()) || true }))
 app.use(express.json({ limit: '32kb' }))
 
+app.use('/official-api', async (request, response) => {
+  const upstream = (process.env.OFFICIAL_API_UPSTREAM_URL || 'https://whatsapp-modelos.andre-51e.workers.dev').replace(/\/$/, '')
+  const target = new URL(`${upstream}/api/v1${request.path || '/'}`)
+  Object.entries(request.query).forEach(([key, value]) => {
+    if (Array.isArray(value)) value.forEach((item) => target.searchParams.append(key, item))
+    else if (value != null) target.searchParams.set(key, value)
+  })
+  const headers = { Accept: request.get('accept') || 'application/json' }
+  const token = process.env.OFFICIAL_API_TOKEN || process.env.VITE_OFFICIAL_API_TOKEN
+  if (token) headers.Authorization = `Bearer ${token}`
+  if (request.get('content-type')) headers['Content-Type'] = request.get('content-type')
+  const upstreamResponse = await fetch(target, {
+    method: request.method,
+    headers,
+    body: ['GET', 'HEAD'].includes(request.method) ? undefined : JSON.stringify(request.body),
+  })
+  response.status(upstreamResponse.status)
+  const contentType = upstreamResponse.headers.get('content-type')
+  if (contentType) response.set('Content-Type', contentType)
+  response.send(Buffer.from(await upstreamResponse.arrayBuffer()))
+})
+
 function issueToken(user) {
   return jwt.sign({ sub: String(user.id), email: user.email, name: user.name }, jwtSecret, { expiresIn: '8h' })
 }

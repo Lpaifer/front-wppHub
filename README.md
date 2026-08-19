@@ -149,3 +149,5 @@ O Express serve o frontend compilado e as rotas `/api` no mesmo domínio. Config
 ```text
 https://SEU-SERVICO.up.railway.app/integrations/bitrix/deal
 ```
+
+Para o canal oficial em produção, configure também `OFFICIAL_API_UPSTREAM_URL` e `OFFICIAL_API_TOKEN` no Railway. O Express encaminha `/official-api/*` para o upstream oficial; o fallback do frontend não deve responder a essa rota.
