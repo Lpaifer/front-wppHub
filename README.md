@@ -64,8 +64,11 @@ Na configuração da aplicação do Bitrix24, use:
 
 ```text
 Placement: CRM_DEAL_DETAIL_TAB
-URL: https://SEU-DOMINIO/wpphub/integrations/bitrix/deal
+Handler da aba: https://SEU-DOMINIO/wpphub/integrations/bitrix/deal
+Instalação inicial: https://SEU-DOMINIO/wpphub/integrations/bitrix/install
 ```
+
+Abra a rota de instalação dentro do Bitrix como administrador e clique em **Registrar aba Mensagens**. Ela executa `placement.bind` para registrar `CRM_DEAL_DETAIL_TAB`; depois abra um negócio e procure a aba Mensagens.
 
 A aplicação precisa de permissão REST para `crm` e deve usar HTTPS. O negócio precisa ter um contato relacionado com telefone cadastrado. A tela Bitrix possui login próprio; ela chama `POST ${VITE_AUTH_API_BASE_URL}/login` com `{ email, password }`, persiste o token retornado no navegador e envia as credenciais da sessão conforme o backend definir.
 

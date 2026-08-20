@@ -73,3 +73,13 @@ export async function getBitrixDealContext() {
     phone: firstPhone(contact?.fm) || firstPhone(contact?.PHONE),
   }
 }
+
+export async function bindDealMessagesPlacement() {
+  const sdk = await loadSdk()
+  await initSdk(sdk)
+  await callMethod(sdk, 'placement.bind', {
+    PLACEMENT: 'CRM_DEAL_DETAIL_TAB',
+    HANDLER: `${window.location.origin}/integrations/bitrix/deal`,
+    TITLE: 'Mensagens',
+  })
+}

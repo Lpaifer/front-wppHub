@@ -135,6 +135,9 @@ app.use(express.static(frontendDirectory))
 app.post('/integrations/bitrix/deal', (_request, response) => {
   response.sendFile(path.join(frontendDirectory, 'index.html'))
 })
+app.post('/integrations/bitrix/install', (_request, response) => {
+  response.sendFile(path.join(frontendDirectory, 'index.html'))
+})
 app.get(/^(?!\/api(?:\/|$)|\/health$).*/, (_request, response) => {
   response.sendFile(path.join(frontendDirectory, 'index.html'))
 })
