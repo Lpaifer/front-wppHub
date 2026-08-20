@@ -32,6 +32,31 @@ function accountLabel(account) {
   return account?.name || account?.nome || account?.numero || account?.phone || `Dispositivo ${account?.id || ''}`
 }
 
+function mergeMessages(current, incoming) {
+  const incomingMessages = [...incoming.messages]
+  const currentMessages = current.messages.filter((message) => {
+    if (!message.optimistic) return true
+    const matchingIndex = incomingMessages.findIndex((candidate) => candidate.direction === 'outbound' && candidate.text === message.text)
+    if (matchingIndex === -1) return true
+    incomingMessages.splice(matchingIndex, 1)
+    return false
+  })
+  const messagesById = new Map(currentMessages.map((message) => [message.id, message]))
+  incomingMessages.forEach((message) => messagesById.set(message.id, message))
+  return {
+    ...current,
+    ...incoming,
+    contact: { ...current.contact, ...incoming.contact },
+    messages: [...messagesById.values()].sort((first, second) => {
+      const firstTime = new Date(first.timestamp).getTime()
+      const secondTime = new Date(second.timestamp).getTime()
+      if (Number.isNaN(firstTime)) return 1
+      if (Number.isNaN(secondTime)) return -1
+      return firstTime - secondTime
+    }),
+  }
+}
+
 function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -97,9 +122,12 @@ export default function BitrixDeal() {
   const [sending, setSending] = useState(false)
   const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
+  const conversationRef = useRef(null)
 
   const selectedAccount = useMemo(() => channels[channel].find((account) => String(account.id) === String(accountId)) || null, [accountId, channel, channels])
   const activeAccount = lockedAccount || selectedAccount
+
+  useEffect(() => { conversationRef.current = conversation }, [conversation])
 
   useEffect(() => {
     if (!session) return undefined
@@ -167,6 +195,42 @@ export default function BitrixDeal() {
     return () => controller.abort()
   }, [session])
 
+  useEffect(() => {
+    if (loading || !context || !conversation || !activeAccount) return undefined
+    let refreshing = false
+    let refreshController = null
+
+    async function refreshConversation() {
+      if (refreshing || document.hidden) return
+      const current = conversationRef.current
+      if (!current) return
+      refreshing = true
+      refreshController = new AbortController()
+      try {
+        const messagesWithTimestamp = current.messages.filter((message) => message.timestamp)
+        const since = messagesWithTimestamp.at(-1)?.timestamp || ''
+        const incoming = await getConversation(channel, current.contact.phone, activeAccount.id, refreshController.signal, since)
+        if (!incoming.messages.length) return
+        setConversation((latest) => latest ? mergeMessages(latest, incoming) : latest)
+      } catch (err) {
+        if (err.name !== 'AbortError') console.warn('Não foi possível atualizar a conversa do Deal.', err)
+      } finally {
+        refreshing = false
+      }
+    }
+
+    const intervalId = window.setInterval(refreshConversation, 3000)
+    const refreshWhenVisible = () => { if (!document.hidden) refreshConversation() }
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    window.addEventListener('focus', refreshWhenVisible)
+    return () => {
+      window.clearInterval(intervalId)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+      window.removeEventListener('focus', refreshWhenVisible)
+      refreshController?.abort()
+    }
+  }, [activeAccount?.id, channel, context?.dealId, conversation?.contact.phone, loading])
+
   async function handleSend(event) {
     event.preventDefault()
     if (!activeAccount || !conversation || !draft.trim() || sending) return
@@ -182,7 +246,7 @@ export default function BitrixDeal() {
         accountId: activeAccount.id,
         conversationId: result.conversation_id || result.conversationId || null,
       })
-      const message = { id: result.message_id || `local-${Date.now()}`, direction: 'outbound', text, timestamp: new Date().toISOString(), status: 'sent' }
+      const message = { id: result.message_id || `local-${Date.now()}`, direction: 'outbound', text, timestamp: new Date().toISOString(), status: 'sent', optimistic: true }
       setConversation((current) => ({ ...current, messages: [...current.messages, message] }))
       setLockedAccount(activeAccount)
       setDraft('')
