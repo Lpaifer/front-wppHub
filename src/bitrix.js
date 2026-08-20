@@ -70,7 +70,7 @@ function firstPhone(fields) {
 export async function getBitrixDealContext() {
   const sdk = await loadSdk()
   await initSdk(sdk)
-  const placement = await new Promise((resolve, reject) => {
+  const placement = window.__BITRIX_PLACEMENT_CONTEXT__ || await new Promise((resolve, reject) => {
     const timeoutId = window.setTimeout(() => reject(new Error('O Bitrix24 não forneceu o contexto deste Deal.')), 10000)
     try {
       sdk.placement.info((info) => {

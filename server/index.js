@@ -36,6 +36,7 @@ if (process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD) {
 
 app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',').map((origin) => origin.trim()) || true }))
 app.use(express.json({ limit: '32kb' }))
+app.use(express.urlencoded({ extended: true, limit: '32kb' }))
 
 app.use('/official-api', async (request, response) => {
   const upstream = (process.env.OFFICIAL_API_UPSTREAM_URL || 'https://whatsapp-modelos.andre-51e.workers.dev').replace(/\/$/, '')
@@ -132,10 +133,15 @@ app.put('/api/bitrix/deals/:dealId/conversation', requireAuth, async (request, r
 app.get('/health', (_request, response) => response.json({ ok: true }))
 
 app.use(express.static(frontendDirectory))
-app.post('/integrations/bitrix/deal', (_request, response) => {
-  response.sendFile(path.join(frontendDirectory, 'index.html'))
-})
-app.post('/integrations/bitrix/install', (_request, response) => {
+async function sendFrontendWithBitrixContext(request, response) {
+  const html = await readFile(path.join(frontendDirectory, 'index.html'), 'utf8')
+  const context = JSON.stringify(request.body || {}).replace(/</g, '\\u003c')
+  const bootstrap = `<script>window.__BITRIX_PLACEMENT_CONTEXT__=${context}</script>`
+  response.type('html').send(html.replace('</head>', `${bootstrap}</head>`))
+}
+
+app.post('/integrations/bitrix/deal', sendFrontendWithBitrixContext)
+app.post('/integrations/bitrix/install', async (_request, response) => {
   response.sendFile(path.join(frontendDirectory, 'index.html'))
 })
 app.get(/^(?!\/api(?:\/|$)|\/health$).*/, (_request, response) => {
