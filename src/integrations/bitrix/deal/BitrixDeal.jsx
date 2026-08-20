@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { LogOut, MessageCircle, Send, X } from 'lucide-react'
 import { authHeaders, getAuthSession, login, logout } from '../../../auth'
-import { getBitrixDealContext } from '../../../bitrix'
+import { getBitrixDealContext, resizeBitrixWindow } from '../../../bitrix'
 import { getAccounts, getConversation, normalizeBrazilianPhone, sendMessage } from '../../../api'
 
 const CHANNEL_LABELS = { hub: 'WhatsApp Hub', official: 'API Oficial' }
@@ -128,6 +128,12 @@ export default function BitrixDeal() {
   const activeAccount = lockedAccount || selectedAccount
 
   useEffect(() => { conversationRef.current = conversation }, [conversation])
+
+  useEffect(() => {
+    if (!session) return undefined
+    resizeBitrixWindow(860).catch(() => {})
+    return undefined
+  }, [session])
 
   useEffect(() => {
     if (!session) return undefined

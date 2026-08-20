@@ -104,6 +104,12 @@ export async function getBitrixDealContext() {
   }
 }
 
+export async function resizeBitrixWindow(height = 860) {
+  const sdk = await loadSdk()
+  await initSdk(sdk)
+  if (typeof sdk.resizeWindow === 'function') sdk.resizeWindow(window.innerWidth, height)
+}
+
 export async function bindDealMessagesPlacement() {
   const sdk = await loadSdk()
   await initSdk(sdk)
