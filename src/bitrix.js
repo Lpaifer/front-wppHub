@@ -22,9 +22,14 @@ function loadSdk() {
 
 function initSdk(sdk) {
   return new Promise((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => reject(new Error('O Bitrix24 não respondeu ao inicializar o SDK.')), 10000)
     try {
-      sdk.init(resolve)
+      sdk.init(() => {
+        window.clearTimeout(timeoutId)
+        resolve()
+      })
     } catch (error) {
+      window.clearTimeout(timeoutId)
       reject(error)
     }
   })
@@ -32,14 +37,27 @@ function initSdk(sdk) {
 
 function callMethod(sdk, method, params) {
   return new Promise((resolve, reject) => {
-    sdk.callMethod(method, params, (result) => {
-      if (result.error()) {
-        reject(new Error(result.error_description() || `O Bitrix24 recusou a chamada ${method}.`))
-        return
-      }
-      resolve(result.data())
-    })
+    const timeoutId = window.setTimeout(() => reject(new Error(`O Bitrix24 não respondeu à chamada ${method}.`)), 15000)
+    try {
+      sdk.callMethod(method, params, (result) => {
+        window.clearTimeout(timeoutId)
+        if (result.error()) {
+          reject(new Error(result.error_description() || `O Bitrix24 recusou a chamada ${method}.`))
+          return
+        }
+        resolve(result.data())
+      })
+    } catch (error) {
+      window.clearTimeout(timeoutId)
+      reject(error)
+    }
   })
+}
+
+function readPlacementOptions(placement) {
+  const value = placement?.options ?? placement?.PLACEMENT_OPTIONS ?? placement?.placement_options ?? {}
+  if (typeof value !== 'string') return value
+  try { return JSON.parse(value) } catch { return {} }
 }
 
 function firstPhone(fields) {
@@ -52,8 +70,20 @@ function firstPhone(fields) {
 export async function getBitrixDealContext() {
   const sdk = await loadSdk()
   await initSdk(sdk)
-  const placement = await new Promise((resolve) => sdk.placement.info(resolve))
-  const dealId = placement?.options?.ID || placement?.options?.id || placement?.ID || new URLSearchParams(window.location.search).get('deal_id') || ''
+  const placement = await new Promise((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => reject(new Error('O Bitrix24 não forneceu o contexto deste Deal.')), 10000)
+    try {
+      sdk.placement.info((info) => {
+        window.clearTimeout(timeoutId)
+        resolve(info)
+      })
+    } catch (error) {
+      window.clearTimeout(timeoutId)
+      reject(error)
+    }
+  })
+  const options = readPlacementOptions(placement)
+  const dealId = options.ID || options.id || placement?.ID || new URLSearchParams(window.location.search).get('deal_id') || ''
   if (!dealId) throw new Error('Não foi possível identificar o negócio aberto no Bitrix24.')
 
   const dealResult = await callMethod(sdk, 'crm.item.get', { entityTypeId: 2, id: dealId })

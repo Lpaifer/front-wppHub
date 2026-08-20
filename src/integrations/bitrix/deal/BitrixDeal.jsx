@@ -188,6 +188,7 @@ export default function BitrixDeal() {
 
   if (!session) return <LoginScreen onLogin={setSession} />
   if (loading) return <main className="bitrix-page"><div className="loader"><span /><p>Carregando negócio e conversa...</p></div></main>
+  if (error && !context) return <main className="bitrix-page"><div className="empty-state"><div className="empty-icon"><X size={28} /></div><h2>Não foi possível carregar este Deal</h2><p>{error}</p></div></main>
 
   return <main className="bitrix-page">
     <header className="bitrix-header">
