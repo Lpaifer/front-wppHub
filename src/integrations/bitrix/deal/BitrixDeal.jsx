@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { LogOut, MessageCircle, Send, X } from 'lucide-react'
 import { authHeaders, getAuthSession, login, logout } from '../../../auth'
 import { getBitrixDealContext } from '../../../bitrix'
@@ -70,7 +70,14 @@ function LoginScreen({ onLogin }) {
 }
 
 function MessageList({ conversation }) {
-  return <div className="messages bitrix-messages">
+  const messagesRef = useRef(null)
+
+  useEffect(() => {
+    const element = messagesRef.current
+    if (element) element.scrollTop = element.scrollHeight
+  }, [conversation.messages.length])
+
+  return <div className="messages bitrix-messages" ref={messagesRef}>
     {!conversation.messages.length && <div className="empty-state"><div className="empty-icon"><MessageCircle size={28} /></div><h2>Nenhuma mensagem ainda</h2><p>A primeira mensagem enviada criará a conversa neste dispositivo.</p></div>}
     {conversation.messages.map((message) => <div className={`message-row ${message.direction}`} key={message.id}>
       <div className="bubble"><p>{message.text || 'Mensagem sem conteúdo textual'}</p><span className="meta">{formatTime(message.timestamp)}</span></div>
