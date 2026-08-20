@@ -77,11 +77,18 @@ export async function getBitrixDealContext() {
 export async function bindDealMessagesPlacement() {
   const sdk = await loadSdk()
   await initSdk(sdk)
-  await callMethod(sdk, 'placement.bind', {
-    PLACEMENT: 'CRM_DEAL_DETAIL_TAB',
-    HANDLER: `${window.location.origin}/integrations/bitrix/deal`,
-    TITLE: 'Mensagens',
-  })
+  const appInfo = await callMethod(sdk, 'app.info', {})
+  if (appInfo?.INSTALLED === true) return
+  try {
+    await callMethod(sdk, 'placement.bind', {
+      PLACEMENT: 'CRM_DEAL_DETAIL_TAB',
+      HANDLER: `${window.location.origin}/integrations/bitrix/deal`,
+      TITLE: 'Mensagens',
+    })
+  } catch (error) {
+    const message = String(error.message || '').toLowerCase()
+    if (!message.includes('handler already binded') && !message.includes('handler already bound')) throw error
+  }
   if (typeof sdk.installFinish !== 'function') throw new Error('O SDK do Bitrix24 não disponibilizou BX24.installFinish().')
   sdk.installFinish()
 }
