@@ -82,4 +82,6 @@ export async function bindDealMessagesPlacement() {
     HANDLER: `${window.location.origin}/integrations/bitrix/deal`,
     TITLE: 'Mensagens',
   })
+  if (typeof sdk.installFinish !== 'function') throw new Error('O SDK do Bitrix24 não disponibilizou BX24.installFinish().')
+  sdk.installFinish()
 }
