@@ -186,6 +186,13 @@ export default function BitrixDeal() {
     }
   }
 
+  function handleDraftKeyDown(event) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      handleSend(event)
+    }
+  }
+
   if (!session) return <LoginScreen onLogin={setSession} />
   if (loading) return <main className="bitrix-page"><div className="loader"><span /><p>Carregando negócio e conversa...</p></div></main>
   if (error && !context) return <main className="bitrix-page"><div className="empty-state"><div className="empty-icon"><X size={28} /></div><h2>Não foi possível carregar este Deal</h2><p>{error}</p></div></main>
@@ -204,7 +211,7 @@ export default function BitrixDeal() {
       <MessageList conversation={conversation || { messages: [] }} />
       {error && <div className="error bitrix-error" role="alert"><X size={15} />{error}</div>}
       <form className="composer bitrix-composer" onSubmit={handleSend}>
-        <div className="composer-row"><textarea value={draft} onChange={(event) => setDraft(event.target.value.slice(0, 4096))} placeholder={activeAccount ? 'Digite sua mensagem...' : 'Selecione um dispositivo para iniciar'} rows="2" disabled={!activeAccount || sending} /><span className="char-count">{draft.length}/4096</span><button type="submit" disabled={!activeAccount || !draft.trim() || sending} aria-label="Enviar mensagem"><Send size={19} /></button></div>
+        <div className="composer-row"><textarea value={draft} onChange={(event) => setDraft(event.target.value.slice(0, 4096))} onKeyDown={handleDraftKeyDown} placeholder={activeAccount ? 'Digite sua mensagem...' : 'Selecione um dispositivo para iniciar'} rows="2" disabled={!activeAccount || sending} /><span className="char-count">{draft.length}/4096</span><button type="submit" disabled={!activeAccount || !draft.trim() || sending} aria-label="Enviar mensagem"><Send size={19} /></button></div>
         <span className="send-hint">A primeira mensagem cria a conversa no dispositivo selecionado.</span>
       </form>
     </section>
