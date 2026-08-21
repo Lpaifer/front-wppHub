@@ -30,6 +30,46 @@ export async function login(email, password) {
   return { token, user }
 }
 
+export async function registerUser({ name, email, password, passwordConfirmation, department }) {
+  const response = await fetch(`${AUTH_BASE_URL}/register`, {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, email, password, passwordConfirmation, department }),
+  })
+  const payload = await response.json().catch(() => null)
+  if (!response.ok) throw new Error(payload?.message || payload?.error || 'Não foi possível concluir o cadastro.')
+  return payload
+}
+
+export async function getAdminUsers() {
+  const response = await fetch('/api/admin/users', { headers: { Accept: 'application/json', ...authHeaders() } })
+  const payload = await response.json().catch(() => null)
+  if (!response.ok) throw new Error(payload?.error || 'Não foi possível carregar os usuários.')
+  return payload.users || []
+}
+
+export async function updateAdminUser(userId, changes) {
+  const response = await fetch(`/api/admin/users/${userId}`, { method: 'PATCH', headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify(changes) })
+  const payload = await response.json().catch(() => null)
+  if (!response.ok) throw new Error(payload?.error || 'Não foi possível atualizar o usuário.')
+  return payload.user
+}
+
+export async function deleteAdminUser(userId) {
+  const response = await fetch(`/api/admin/users/${userId}`, { method: 'DELETE', headers: authHeaders() })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null)
+    throw new Error(payload?.error || 'Não foi possível excluir o usuário.')
+  }
+}
+
+export async function resetAdminUserPassword(userId) {
+  const response = await fetch(`/api/admin/users/${userId}/reset-password`, { method: 'POST', headers: authHeaders() })
+  const payload = await response.json().catch(() => null)
+  if (!response.ok) throw new Error(payload?.error || 'Não foi possível redefinir a senha.')
+  return payload
+}
+
 export function logout() {
   window.localStorage.removeItem(AUTH_TOKEN_KEY)
   window.localStorage.removeItem(AUTH_USER_KEY)

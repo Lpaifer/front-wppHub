@@ -51,9 +51,9 @@ function formatFileSize(bytes) {
 function MessageAttachment({ attachment, channel }) {
   const [source, setSource] = useState('')
   const [failed, setFailed] = useState(false)
-  const supported = ['image', 'audio', 'document'].includes(attachment?.type)
+  const supported = ['image', 'sticker', 'audio', 'document'].includes(attachment?.type)
   const AttachmentIcon = attachment?.type === 'audio' ? Mic : attachment?.type === 'document' ? FileText : ImageIcon
-  const label = attachment?.type === 'audio' ? 'áudio' : attachment?.type === 'document' ? 'documento' : 'imagem'
+  const label = attachment?.type === 'audio' ? 'áudio' : attachment?.type === 'document' ? 'documento' : attachment?.type === 'sticker' ? 'figurinha' : 'imagem'
   const capitalizedLabel = `${label.charAt(0).toUpperCase()}${label.slice(1)}`
 
   useEffect(() => {
@@ -75,7 +75,7 @@ function MessageAttachment({ attachment, channel }) {
   }, [attachment?.ready, attachment?.url, channel, supported])
 
   if (!supported) return null
-  if (attachment.ready === false) return <div className="attachment-state"><AttachmentIcon size={18} />{capitalizedLabel} sendo processad{label === 'imagem' ? 'a' : 'o'}...</div>
+  if (attachment.ready === false) return <div className="attachment-state"><AttachmentIcon size={18} />{capitalizedLabel} sendo processad{['imagem', 'figurinha'].includes(label) ? 'a' : 'o'}...</div>
   if (!attachment.url) return <div className="attachment-state error-state"><AttachmentIcon size={18} />{capitalizedLabel} sem URL disponível.</div>
   if (failed) return <div className="attachment-state error-state"><AttachmentIcon size={18} />Não foi possível carregar o {label}.</div>
   if (!source) return <div className="attachment-state"><AttachmentIcon size={18} />Carregando {label}...</div>
@@ -92,7 +92,7 @@ function MessageAttachment({ attachment, channel }) {
     </figcaption>
     <a href={source} download={attachment.name || 'documento'} aria-label="Baixar documento"><Download size={16} />Baixar</a>
   </figure>
-  return <figure className="message-attachment">
+  return <figure className={`message-attachment ${attachment.type === 'sticker' ? 'message-sticker' : ''}`}>
     <img src={source} alt={attachment.name || 'Imagem enviada na conversa'} loading="lazy" />
     <a href={source} download={attachment.name || 'imagem'} aria-label="Baixar imagem"><Download size={15} />Baixar</a>
   </figure>

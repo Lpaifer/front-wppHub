@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Download, FileText, Image as ImageIcon, LogOut, MessageCircle, Mic, Send, X } from 'lucide-react'
-import { authHeaders, getAuthSession, login, logout } from '../../../auth'
+import { authHeaders, getAuthSession, login, logout, registerUser } from '../../../auth'
 import { getBitrixDealContext, resizeBitrixWindow } from '../../../bitrix'
 import { getAccounts, getAttachment, getConversation, normalizeBrazilianPhone, sendMessage } from '../../../api'
 
@@ -43,9 +43,9 @@ function formatFileSize(bytes) {
 function MessageAttachment({ attachment, channel }) {
   const [source, setSource] = useState('')
   const [failed, setFailed] = useState(false)
-  const supported = ['image', 'audio', 'document'].includes(attachment?.type)
+  const supported = ['image', 'sticker', 'audio', 'document'].includes(attachment?.type)
   const AttachmentIcon = attachment?.type === 'audio' ? Mic : attachment?.type === 'document' ? FileText : ImageIcon
-  const label = attachment?.type === 'audio' ? 'áudio' : attachment?.type === 'document' ? 'documento' : 'imagem'
+  const label = attachment?.type === 'audio' ? 'áudio' : attachment?.type === 'document' ? 'documento' : attachment?.type === 'sticker' ? 'figurinha' : 'imagem'
 
   useEffect(() => {
     if (!supported || !attachment.url || attachment.ready === false) return undefined
@@ -66,7 +66,7 @@ function MessageAttachment({ attachment, channel }) {
   }, [attachment?.ready, attachment?.url, channel, supported])
 
   if (!supported) return null
-  if (attachment.ready === false) return <div className="attachment-state"><AttachmentIcon size={18} />{label.charAt(0).toUpperCase() + label.slice(1)} sendo processad{label === 'imagem' ? 'a' : 'o'}...</div>
+  if (attachment.ready === false) return <div className="attachment-state"><AttachmentIcon size={18} />{label.charAt(0).toUpperCase() + label.slice(1)} sendo processad{['imagem', 'figurinha'].includes(label) ? 'a' : 'o'}...</div>
   if (!attachment.url) return <div className="attachment-state error-state"><AttachmentIcon size={18} />{label.charAt(0).toUpperCase() + label.slice(1)} sem URL disponível.</div>
   if (failed) return <div className="attachment-state error-state"><AttachmentIcon size={18} />Não foi possível carregar o {label}.</div>
   if (!source) return <div className="attachment-state"><AttachmentIcon size={18} />Carregando {label}...</div>
@@ -80,7 +80,7 @@ function MessageAttachment({ attachment, channel }) {
     <figcaption><strong>{attachment.name || 'Documento'}</strong><span>{[formatFileSize(attachment.bytes), attachment.mime].filter(Boolean).join(' · ')}</span></figcaption>
     <a href={source} download={attachment.name || 'documento'} aria-label="Baixar documento"><Download size={16} />Baixar</a>
   </figure>
-  return <figure className="message-attachment">
+  return <figure className={`message-attachment ${attachment.type === 'sticker' ? 'message-sticker' : ''}`}>
     <img src={source} alt={attachment.name || 'Imagem enviada na conversa'} loading="lazy" />
     <a href={source} download={attachment.name || 'imagem'} aria-label="Baixar imagem"><Download size={15} />Baixar</a>
   </figure>
@@ -112,18 +112,32 @@ function mergeMessages(current, incoming) {
 }
 
 function LoginScreen({ onLogin }) {
+  const [registering, setRegistering] = useState(false)
   const [email, setEmail] = useState('')
+  const [name, setName] = useState('')
   const [password, setPassword] = useState('')
+  const [passwordConfirmation, setPasswordConfirmation] = useState('')
+  const [department, setDepartment] = useState('')
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
   const [loading, setLoading] = useState(false)
+  const departments = ['Comercial B2C', 'Comercial B2B', 'Secretaria', 'Financeiro', 'Coordenação', 'Administrativo']
 
   async function handleSubmit(event) {
     event.preventDefault()
     setLoading(true)
     setError('')
     try {
-      const session = await login(email, password)
-      onLogin(session)
+      if (registering) {
+        const result = await registerUser({ name, email, password, passwordConfirmation, department })
+        setSuccess(result.message || 'Cadastro enviado para aprovação.')
+        setRegistering(false)
+        setPassword('')
+        setPasswordConfirmation('')
+      } else {
+        const session = await login(email, password)
+        onLogin(session)
+      }
     } catch (err) {
       setError(err.message)
     } finally {
@@ -134,16 +148,21 @@ function LoginScreen({ onLogin }) {
   return <main className="bitrix-page bitrix-login-page">
     <section className="bitrix-login-panel">
       <span className="bitrix-brand"><MessageCircle size={19} />WppHub</span>
-      <h1>Acesse suas conversas</h1>
-      <p>Entre para abrir a mensageria deste negócio.</p>
+      <h1>{registering ? 'Criar acesso' : 'Acesse suas conversas'}</h1>
+      <p>{registering ? 'Seu cadastro será enviado para aprovação do administrador.' : 'Entre para abrir a mensageria deste negócio.'}</p>
       <form onSubmit={handleSubmit} className="bitrix-login-form">
+        {registering && <><label htmlFor="bitrix-name">Nome completo</label><input id="bitrix-name" value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" required /></>}
         <label htmlFor="bitrix-email">E-mail</label>
         <input id="bitrix-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" required />
+        {registering && <><label htmlFor="bitrix-department">Departamento</label><select id="bitrix-department" value={department} onChange={(event) => setDepartment(event.target.value)} required><option value="">Selecione</option>{departments.map((item) => <option key={item}>{item}</option>)}</select></>}
         <label htmlFor="bitrix-password">Senha</label>
         <input id="bitrix-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required />
+        {registering && <><small className="bitrix-form-hint">Mínimo de 8 caracteres, com letras e números.</small><label htmlFor="bitrix-password-confirmation">Confirmar senha</label><input id="bitrix-password-confirmation" type="password" value={passwordConfirmation} onChange={(event) => setPasswordConfirmation(event.target.value)} autoComplete="new-password" required /></>}
+        {success && <div className="bitrix-form-success">{success}</div>}
         {error && <div className="error" role="alert"><X size={15} />{error}</div>}
-        <button type="submit" disabled={loading}>{loading ? 'Entrando...' : 'Entrar'}</button>
+        <button type="submit" disabled={loading}>{loading ? 'Aguarde...' : registering ? 'Solicitar cadastro' : 'Entrar'}</button>
       </form>
+      <button className="bitrix-mode-toggle" type="button" onClick={() => { setRegistering((value) => !value); setError(''); setSuccess('') }}>{registering ? 'Já tenho acesso' : 'Criar novo acesso'}</button>
     </section>
   </main>
 }
@@ -363,7 +382,7 @@ export default function BitrixDeal() {
   return <main className="bitrix-page">
     <header className="bitrix-header">
       <div><span className="eyebrow">Negócio Bitrix24</span><h1>{context?.dealTitle || 'Conversas do negócio'}</h1><p>{context?.contactName || 'Contato'} · {conversation?.contact.phone}</p></div>
-      <button className="bitrix-logout" type="button" onClick={() => { logout(); setSession(null) }}><LogOut size={15} />Sair</button>
+      <div className="bitrix-header-actions">{session.user?.role === 'admin' && <a className="bitrix-admin-link" href="/admin/users">Usuários</a>}<button className="bitrix-logout" type="button" onClick={() => { logout(); setSession(null) }}><LogOut size={15} />Sair</button></div>
     </header>
     <section className="bitrix-conversation">
       <div className="bitrix-conversation-bar">

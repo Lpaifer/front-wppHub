@@ -4,11 +4,14 @@ import express from 'express'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { readFile } from 'node:fs/promises'
+import { randomBytes } from 'node:crypto'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { neon } from '@neondatabase/serverless'
 
 const app = express()
+const ADMIN_EMAIL = 'admin@unifast.com.br'
+const DEPARTMENTS = ['Comercial B2C', 'Comercial B2B', 'Secretaria', 'Financeiro', 'Coordenação', 'Administrativo']
 const serverDirectory = path.dirname(fileURLToPath(import.meta.url))
 const frontendDirectory = path.resolve(serverDirectory, '..', 'dist')
 dotenv.config({ path: path.join(serverDirectory, '.env') })
@@ -32,6 +35,7 @@ if (process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD) {
     VALUES (${process.env.ADMIN_EMAIL.toLowerCase()}, ${passwordHash}, ${process.env.ADMIN_NAME || 'Administrador'})
     ON CONFLICT (email) DO NOTHING
   `
+  await sql`UPDATE users SET role = 'admin', status = 'approved' WHERE lower(email) = ${ADMIN_EMAIL}`
 }
 
 app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',').map((origin) => origin.trim()) || true }))
@@ -61,7 +65,7 @@ app.use('/official-api', async (request, response) => {
 })
 
 function issueToken(user) {
-  return jwt.sign({ sub: String(user.id), email: user.email, name: user.name }, jwtSecret, { expiresIn: '8h' })
+  return jwt.sign({ sub: String(user.id), email: user.email, name: user.name, role: user.role, department: user.department }, jwtSecret, { expiresIn: '8h' })
 }
 
 function requireAuth(request, response, next) {
@@ -76,12 +80,31 @@ function requireAuth(request, response, next) {
   }
 }
 
+function requireAdmin(request, response, next) {
+  if (request.user?.role !== 'admin' || request.user?.email?.toLowerCase() !== ADMIN_EMAIL) {
+    return response.status(403).json({ error: 'Acesso restrito ao administrador.' })
+  }
+  return next()
+}
+
+function validCompanyEmail(email) {
+  return /^[^\s@]+@unifast\.com\.br$/i.test(email)
+}
+
+function validPassword(password) {
+  return password.length >= 8 && /[A-Za-z]/.test(password) && /\d/.test(password)
+}
+
+function publicUser(user) {
+  return { id: user.id, email: user.email, name: user.name, department: user.department, status: user.status, role: user.role, active: user.active }
+}
+
 app.post('/api/auth/login', async (request, response) => {
   const email = String(request.body?.email || '').trim().toLowerCase()
   const password = String(request.body?.password || '')
   if (!email || !password) return response.status(400).json({ error: 'E-mail e senha são obrigatórios.' })
   const result = await sql`
-    SELECT id, email, name, password_hash, active
+    SELECT id, email, name, department, status, role, password_hash, active
     FROM users
     WHERE email = ${email}
   `
@@ -89,7 +112,75 @@ app.post('/api/auth/login', async (request, response) => {
   if (!user || !user.active || !(await bcrypt.compare(password, user.password_hash))) {
     return response.status(401).json({ error: 'E-mail ou senha inválidos.' })
   }
-  return response.json({ token: issueToken(user), user: { id: user.id, email: user.email, name: user.name } })
+  if (user.status !== 'approved') return response.status(403).json({ error: user.status === 'pending' ? 'Seu cadastro ainda aguarda aprovação do administrador.' : 'Seu cadastro não está aprovado.' })
+  return response.json({ token: issueToken(user), user: publicUser(user) })
+})
+
+app.post('/api/auth/register', async (request, response) => {
+  const name = String(request.body?.name || '').trim()
+  const email = String(request.body?.email || '').trim().toLowerCase()
+  const password = String(request.body?.password || '')
+  const confirmation = String(request.body?.passwordConfirmation || '')
+  const department = String(request.body?.department || '').trim()
+  if (!name || !email || !password || !confirmation || !department) return response.status(400).json({ error: 'Preencha todos os campos.' })
+  if (!validCompanyEmail(email)) return response.status(400).json({ error: 'Use um e-mail com domínio @unifast.com.br.' })
+  if (!DEPARTMENTS.includes(department)) return response.status(400).json({ error: 'Selecione um departamento válido.' })
+  if (!validPassword(password)) return response.status(400).json({ error: 'A senha deve ter pelo menos 8 caracteres, com letras e números.' })
+  if (password !== confirmation) return response.status(400).json({ error: 'As senhas não conferem.' })
+  const existing = await sql`SELECT id FROM users WHERE lower(email) = ${email}`
+  if (existing.length) return response.status(409).json({ error: 'Este e-mail já foi cadastrado.' })
+  const passwordHash = await bcrypt.hash(password, 12)
+  const result = await sql`
+    INSERT INTO users (email, password_hash, name, department, status, role, active)
+    VALUES (${email}, ${passwordHash}, ${name}, ${department}, 'pending', 'user', true)
+    RETURNING id, email, name, department, status, role, active
+  `
+  return response.status(201).json({ user: publicUser(result[0]), message: 'Cadastro enviado para aprovação.' })
+})
+
+app.get('/api/admin/users', requireAuth, requireAdmin, async (_request, response) => {
+  const result = await sql`SELECT id, email, name, department, status, role, active, created_at FROM users ORDER BY created_at DESC`
+  return response.json({ users: result.map(publicUser) })
+})
+
+app.patch('/api/admin/users/:userId', requireAuth, requireAdmin, async (request, response) => {
+  const userId = Number(request.params.userId)
+  const status = request.body?.status ? String(request.body.status) : null
+  const department = request.body?.department ? String(request.body.department) : null
+  const active = typeof request.body?.active === 'boolean' ? request.body.active : null
+  if (!Number.isInteger(userId) || (!['pending', 'approved', 'rejected'].includes(status) && !DEPARTMENTS.includes(department || '') && active === null)) return response.status(400).json({ error: 'Alteração de usuário inválida.' })
+  const result = await sql`
+    UPDATE users SET
+      status = COALESCE(${status}, status),
+      department = COALESCE(${department}, department),
+      active = COALESCE(${active}, active),
+      updated_at = NOW()
+    WHERE id = ${userId}
+    RETURNING id, email, name, department, status, role, active
+  `
+  if (!result[0]) return response.status(404).json({ error: 'Usuário não encontrado.' })
+  return response.json({ user: publicUser(result[0]) })
+})
+
+app.post('/api/admin/users/:userId/reset-password', requireAuth, requireAdmin, async (request, response) => {
+  const userId = Number(request.params.userId)
+  if (!Number.isInteger(userId)) return response.status(400).json({ error: 'Usuário inválido.' })
+  const temporaryPassword = `${randomBytes(5).toString('hex')}A1`
+  const passwordHash = await bcrypt.hash(temporaryPassword, 12)
+  const result = await sql`
+    UPDATE users SET password_hash = ${passwordHash}, updated_at = NOW()
+    WHERE id = ${userId} AND lower(email) <> ${ADMIN_EMAIL}
+    RETURNING id, email
+  `
+  if (!result[0]) return response.status(404).json({ error: 'Usuário não encontrado ou não pode ser alterado.' })
+  return response.json({ email: result[0].email, temporaryPassword })
+})
+
+app.delete('/api/admin/users/:userId', requireAuth, requireAdmin, async (request, response) => {
+  const userId = Number(request.params.userId)
+  if (!Number.isInteger(userId)) return response.status(400).json({ error: 'Usuário inválido.' })
+  await sql`DELETE FROM users WHERE id = ${userId} AND lower(email) <> ${ADMIN_EMAIL}`
+  return response.status(204).end()
 })
 
 app.get('/api/bitrix/deals/:dealId/conversation', requireAuth, async (request, response) => {
