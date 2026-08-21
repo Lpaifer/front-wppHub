@@ -122,10 +122,14 @@ export default function BitrixDeal() {
   const [sending, setSending] = useState(false)
   const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
+  const [switchingDevice, setSwitchingDevice] = useState(false)
+  const [deviceLoading, setDeviceLoading] = useState(false)
   const conversationRef = useRef(null)
 
   const selectedAccount = useMemo(() => channels[channel].find((account) => String(account.id) === String(accountId)) || null, [accountId, channel, channels])
-  const activeAccount = lockedAccount || selectedAccount
+  const activeAccount = switchingDevice ? selectedAccount : lockedAccount || selectedAccount
+  const canSwitchDevice = Boolean(lockedAccount && channel === 'official' && conversation?.windowOpen === false)
+  const showDeviceSelector = !lockedAccount || switchingDevice
 
   useEffect(() => { conversationRef.current = conversation }, [conversation])
 
@@ -237,9 +241,29 @@ export default function BitrixDeal() {
     }
   }, [activeAccount?.id, channel, context?.dealId, conversation?.contact.phone, loading])
 
+  async function handleDeviceChange(nextChannel, nextAccountId) {
+    if (!context || !conversation || !nextAccountId) return
+    const account = channels[nextChannel].find((item) => String(item.id) === String(nextAccountId))
+    if (!account) return
+    setChannel(nextChannel)
+    setAccountId(String(nextAccountId))
+    setDeviceLoading(true)
+    setError('')
+    try {
+      const nextConversation = await getConversation(nextChannel, conversation.contact.phone, account.id, undefined)
+      setConversation(nextConversation)
+      setLockedAccount(nextConversation.windowOpen === false ? null : account)
+      setSwitchingDevice(nextConversation.windowOpen === false)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setDeviceLoading(false)
+    }
+  }
+
   async function handleSend(event) {
     event.preventDefault()
-    if (!activeAccount || !conversation || !draft.trim() || sending) return
+    if (!activeAccount || !conversation || !draft.trim() || sending || deviceLoading) return
     const text = draft.trim()
     setSending(true)
     setError('')
@@ -281,9 +305,9 @@ export default function BitrixDeal() {
     </header>
     <section className="bitrix-conversation">
       <div className="bitrix-conversation-bar">
-        <div><strong>{lockedAccount ? 'Dispositivo da conversa' : 'Escolha onde iniciar'}</strong><span>{activeAccount ? accountLabel(activeAccount) : 'Nenhum dispositivo disponível'}</span></div>
-        {lockedAccount && <small>{CHANNEL_LABELS[channel]} · dispositivo fixado</small>}
-        {!lockedAccount && <div className="bitrix-selects"><select value={channel} onChange={(event) => { setChannel(event.target.value); setAccountId(String(channels[event.target.value][0]?.id || '')) }}><option value="hub">WhatsApp Hub</option><option value="official">API Oficial</option></select><select value={accountId} onChange={(event) => setAccountId(event.target.value)}><option value="">Selecione o dispositivo</option>{channels[channel].map((account) => <option key={account.id} value={account.id}>{accountLabel(account)}</option>)}</select></div>}
+        <div><strong>{showDeviceSelector ? 'Escolha o dispositivo' : 'Dispositivo da conversa'}</strong><span>{activeAccount ? accountLabel(activeAccount) : 'Nenhum dispositivo disponível'}</span></div>
+        {!showDeviceSelector && <div className="bitrix-device-status"><small>{CHANNEL_LABELS[channel]} · dispositivo fixado</small>{canSwitchDevice && <button type="button" onClick={() => setSwitchingDevice(true)}>Trocar dispositivo</button>}</div>}
+        {showDeviceSelector && <div className="bitrix-selects"><select value={channel} disabled={deviceLoading} onChange={(event) => { const nextChannel = event.target.value; const nextAccountId = String(channels[nextChannel][0]?.id || ''); handleDeviceChange(nextChannel, nextAccountId) }}><option value="hub">WhatsApp Hub</option><option value="official">API Oficial</option></select><select value={accountId} disabled={deviceLoading} onChange={(event) => handleDeviceChange(channel, event.target.value)}><option value="">Selecione o dispositivo</option>{channels[channel].map((account) => <option key={account.id} value={account.id}>{accountLabel(account)}</option>)}</select></div>}
       </div>
       <MessageList conversation={conversation || { messages: [] }} />
       {error && <div className="error bitrix-error" role="alert"><X size={15} />{error}</div>}

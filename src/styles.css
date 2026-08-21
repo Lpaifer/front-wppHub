@@ -51,6 +51,9 @@ h1 { font: 800 clamp(28px, 4vw, 40px) 'Manrope', sans-serif; letter-spacing: -1.
 .bitrix-conversation-bar span, .bitrix-conversation-bar small { color: #718079; font-size: 10px; }
 .bitrix-selects { display: flex; gap: 8px; }
 .bitrix-selects select { height: 36px; min-width: 150px; font-size: 11px; }
+.bitrix-device-status { display: flex; align-items: center; gap: 12px; }
+.bitrix-device-status button { padding: 6px 9px; border: 1px solid #bfd5c8; border-radius: 7px; color: #176f49; background: white; font-size: 10px; font-weight: 700; cursor: pointer; }
+.bitrix-device-status button:hover { background: #edf8f1; }
 .bitrix-messages { min-height: 0; max-height: none; flex: 1; }
 .bitrix-error { margin: 10px 16px 0; }
 .bitrix-composer { flex: 0 0 auto; border-top: 1px solid #d7dfda; }
