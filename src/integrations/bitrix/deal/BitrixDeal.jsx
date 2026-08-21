@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { LogOut, MessageCircle, Send, X } from 'lucide-react'
+import { Download, FileText, Image as ImageIcon, LogOut, MessageCircle, Mic, Send, X } from 'lucide-react'
 import { authHeaders, getAuthSession, login, logout } from '../../../auth'
 import { getBitrixDealContext, resizeBitrixWindow } from '../../../bitrix'
-import { getAccounts, getConversation, normalizeBrazilianPhone, sendMessage } from '../../../api'
+import { getAccounts, getAttachment, getConversation, normalizeBrazilianPhone, sendMessage } from '../../../api'
 
 const CHANNEL_LABELS = { hub: 'WhatsApp Hub', official: 'API Oficial' }
 
@@ -30,6 +30,60 @@ function formatTime(value) {
 
 function accountLabel(account) {
   return account?.name || account?.nome || account?.numero || account?.phone || `Dispositivo ${account?.id || ''}`
+}
+
+function formatFileSize(bytes) {
+  if (!Number.isFinite(Number(bytes))) return ''
+  const size = Number(bytes)
+  if (size < 1024) return `${size} B`
+  if (size < 1024 ** 2) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / 1024 ** 2).toFixed(1)} MB`
+}
+
+function MessageAttachment({ attachment, channel }) {
+  const [source, setSource] = useState('')
+  const [failed, setFailed] = useState(false)
+  const supported = ['image', 'audio', 'document'].includes(attachment?.type)
+  const AttachmentIcon = attachment?.type === 'audio' ? Mic : attachment?.type === 'document' ? FileText : ImageIcon
+  const label = attachment?.type === 'audio' ? 'áudio' : attachment?.type === 'document' ? 'documento' : 'imagem'
+
+  useEffect(() => {
+    if (!supported || !attachment.url || attachment.ready === false) return undefined
+    const controller = new AbortController()
+    let objectUrl = ''
+    setSource('')
+    setFailed(false)
+    getAttachment(channel, attachment.url, controller.signal)
+      .then((blob) => {
+        objectUrl = URL.createObjectURL(blob)
+        setSource(objectUrl)
+      })
+      .catch((err) => { if (err.name !== 'AbortError') setFailed(true) })
+    return () => {
+      controller.abort()
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [attachment?.ready, attachment?.url, channel, supported])
+
+  if (!supported) return null
+  if (attachment.ready === false) return <div className="attachment-state"><AttachmentIcon size={18} />{label.charAt(0).toUpperCase() + label.slice(1)} sendo processad{label === 'imagem' ? 'a' : 'o'}...</div>
+  if (!attachment.url) return <div className="attachment-state error-state"><AttachmentIcon size={18} />{label.charAt(0).toUpperCase() + label.slice(1)} sem URL disponível.</div>
+  if (failed) return <div className="attachment-state error-state"><AttachmentIcon size={18} />Não foi possível carregar o {label}.</div>
+  if (!source) return <div className="attachment-state"><AttachmentIcon size={18} />Carregando {label}...</div>
+  if (attachment.type === 'audio') return <figure className="message-attachment message-audio">
+    <div className="audio-label"><Mic size={17} /><span>{attachment.name || 'Mensagem de áudio'}</span></div>
+    <audio src={source} controls preload="metadata">Seu navegador não suporta reprodução de áudio.</audio>
+    <a href={source} download={attachment.name || 'audio.ogg'} aria-label="Baixar áudio"><Download size={15} />Baixar</a>
+  </figure>
+  if (attachment.type === 'document') return <figure className="message-attachment message-document">
+    <FileText size={30} />
+    <figcaption><strong>{attachment.name || 'Documento'}</strong><span>{[formatFileSize(attachment.bytes), attachment.mime].filter(Boolean).join(' · ')}</span></figcaption>
+    <a href={source} download={attachment.name || 'documento'} aria-label="Baixar documento"><Download size={16} />Baixar</a>
+  </figure>
+  return <figure className="message-attachment">
+    <img src={source} alt={attachment.name || 'Imagem enviada na conversa'} loading="lazy" />
+    <a href={source} download={attachment.name || 'imagem'} aria-label="Baixar imagem"><Download size={15} />Baixar</a>
+  </figure>
 }
 
 function mergeMessages(current, incoming) {
@@ -94,7 +148,7 @@ function LoginScreen({ onLogin }) {
   </main>
 }
 
-function MessageList({ conversation }) {
+function MessageList({ conversation, channel }) {
   const messagesRef = useRef(null)
 
   useEffect(() => {
@@ -105,7 +159,11 @@ function MessageList({ conversation }) {
   return <div className="messages bitrix-messages" ref={messagesRef}>
     {!conversation.messages.length && <div className="empty-state"><div className="empty-icon"><MessageCircle size={28} /></div><h2>Nenhuma mensagem ainda</h2><p>A primeira mensagem enviada criará a conversa neste dispositivo.</p></div>}
     {conversation.messages.map((message) => <div className={`message-row ${message.direction}`} key={message.id}>
-      <div className="bubble"><p>{message.text || 'Mensagem sem conteúdo textual'}</p><span className="meta">{formatTime(message.timestamp)}</span></div>
+      <div className="bubble">
+        {message.attachment && <MessageAttachment attachment={message.attachment} channel={channel} />}
+        {(message.text || !message.attachment) && <p>{message.text || 'Mensagem sem conteúdo textual'}</p>}
+        <span className="meta">{formatTime(message.timestamp)}</span>
+      </div>
     </div>)}
   </div>
 }
@@ -125,6 +183,7 @@ export default function BitrixDeal() {
   const [switchingDevice, setSwitchingDevice] = useState(false)
   const [deviceLoading, setDeviceLoading] = useState(false)
   const conversationRef = useRef(null)
+  const composerRef = useRef(null)
 
   const selectedAccount = useMemo(() => channels[channel].find((account) => String(account.id) === String(accountId)) || null, [accountId, channel, channels])
   const activeAccount = switchingDevice ? selectedAccount : lockedAccount || selectedAccount
@@ -284,6 +343,9 @@ export default function BitrixDeal() {
       setError(err.message)
     } finally {
       setSending(false)
+      window.requestAnimationFrame(() => {
+        if (composerRef.current && !composerRef.current.disabled) composerRef.current.focus({ preventScroll: true })
+      })
     }
   }
 
@@ -309,10 +371,10 @@ export default function BitrixDeal() {
         {!showDeviceSelector && <div className="bitrix-device-status"><small>{CHANNEL_LABELS[channel]} · dispositivo fixado</small>{canSwitchDevice && <button type="button" onClick={() => setSwitchingDevice(true)}>Trocar dispositivo</button>}</div>}
         {showDeviceSelector && <div className="bitrix-selects"><select value={channel} disabled={deviceLoading} onChange={(event) => { const nextChannel = event.target.value; const nextAccountId = String(channels[nextChannel][0]?.id || ''); handleDeviceChange(nextChannel, nextAccountId) }}><option value="hub">WhatsApp Hub</option><option value="official">API Oficial</option></select><select value={accountId} disabled={deviceLoading} onChange={(event) => handleDeviceChange(channel, event.target.value)}><option value="">Selecione o dispositivo</option>{channels[channel].map((account) => <option key={account.id} value={account.id}>{accountLabel(account)}</option>)}</select></div>}
       </div>
-      <MessageList conversation={conversation || { messages: [] }} />
+      <MessageList conversation={conversation || { messages: [] }} channel={channel} />
       {error && <div className="error bitrix-error" role="alert"><X size={15} />{error}</div>}
       <form className="composer bitrix-composer" onSubmit={handleSend}>
-        <div className="composer-row"><textarea value={draft} onChange={(event) => setDraft(event.target.value.slice(0, 4096))} onKeyDown={handleDraftKeyDown} placeholder={activeAccount ? 'Digite sua mensagem...' : 'Selecione um dispositivo para iniciar'} rows="2" disabled={!activeAccount || sending} /><span className="char-count">{draft.length}/4096</span><button type="submit" disabled={!activeAccount || !draft.trim() || sending} aria-label="Enviar mensagem"><Send size={19} /></button></div>
+        <div className="composer-row"><textarea ref={composerRef} value={draft} onChange={(event) => setDraft(event.target.value.slice(0, 4096))} onKeyDown={handleDraftKeyDown} placeholder={activeAccount ? 'Digite sua mensagem...' : 'Selecione um dispositivo para iniciar'} rows="2" disabled={!activeAccount || sending} /><span className="char-count">{draft.length}/4096</span><button type="submit" disabled={!activeAccount || !draft.trim() || sending} aria-label="Enviar mensagem"><Send size={19} /></button></div>
         <span className="send-hint">A primeira mensagem cria a conversa no dispositivo selecionado.</span>
       </form>
     </section>
